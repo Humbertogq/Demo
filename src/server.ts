@@ -5,12 +5,26 @@
   import express from 'express';
   import { z } from 'zod';
   import { fetch } from 'undici';
+  const app = express();
 
   const server = new McpServer({ name: 'mcp-tufesa', version: '1.0.0' });
 
   
   const HolaInput = z.object({ nombre: z.string() });
   const HolaOutput = z.object({ mensaje: z.string() });
+
+
+  
+  app.get("/health", (_req, res) => {
+    res.status(200).send("ok");
+  });
+
+  // Render asigna el puerto en process.env.PORT
+  const PORT = Number(process.env.PORT) || 3000;
+  app.listen(PORT, () => {
+    console.log(`[HTTP] Listening on port ${PORT} (Render health ok)`);
+  });
+
 
   server.registerTool(
     'hola',
