@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "tufesa": {
+      "command": "npm",
+      "args": ["run", "dev"],
+      "workingDirectory": "C:\\src\\mcp\\mcp-tufesa",
+        "env": {
+        "TUFESA_API_BASE": "https://ventas.tufesa.com.mx/wsrestwebjson/",
+        "TUFESA_API_KEY": "169FD88A-87AC-4051-9F9A-B9135E22B93E"
+        }
+    }
+  }
+}
