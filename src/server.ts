@@ -39,51 +39,82 @@ server.tool("Tufesa_rastrear", rastrearSchema, async (args, _extra) => {
   const guia = (args as any).guia.trim();
   const cliente = (args as any).cliente || "";
 
-  // Construye la URL del endpoint (GET)
   const apiBase = process.env.TUFESA_API_BASE || "https://ventas.tufesa.com.mx/wsrestwebjsonbeta/";
   const url = `${apiBase}commDatosEnvio?code=${encodeURIComponent(guia)}&push=-`;
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
+  let json: any;
+  try {
+    const response = await fetch(url, { method: "GET" });
 
-  if (!response.ok) {
-    throw new Error(`Error al consultar envío: ${response.status} ${await response.text()}`);
+    if (!response.ok) {
+      const msg = await response.text();
+      throw new Error(`HTTP ${response.status} — ${msg}`);
+    }
+
+    json = await response.json();
+  } catch (err: any) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `⚠️ No se pudo conectar con el servicio de rastreo.\nError técnico: ${err.message}`
+        }
+      ]
+    };
   }
 
-  // const data = await response.json();
-  
-  const json = await response.json();
-  const data = Array.isArray(json) ? json[0] : json;
+  // ✅ Aseguramos que sea un array y tenga al menos un elemento
+  if (!Array.isArray(json) || json.length === 0) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `❌ La guía ${guia} no está registrada en el sistema o aún no tiene información disponible.`
+        }
+      ]
+    };
+  }
 
-  // Extrae los datos más recientes del historial
-  const ultimoMovimiento = data.historial?.[data.historial.length - 1];
-  const estado = ultimoMovimiento?.MensageCliente || ultimoMovimiento?.movimiento || "Desconocido";
-  const ubicacion = ultimoMovimiento?.UbicacionLegible || data.dstLegible || data.destino || "Desconocida";
-  const fecha = ultimoMovimiento?.fchlegible || data.fecha || "";
-  const destinatario = data.destinatario || "";
-  const origen = data.orgLegible || data.origen || "";
-  const destino = data.dstLegible || data.destino || "";
+  const data = json[0];
 
-  // Construye la respuesta legible para ChatGPT
+  // Verificamos que haya historial
+  if (!data.historial || data.historial.length === 0) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `📭 La guía ${guia} existe pero no tiene movimientos registrados aún.`
+        }
+      ]
+    };
+  }
+
+  // Tomamos el último evento
+  const ultimo = data.historial[data.historial.length - 1];
+
+  const estado = ultimo?.MensageCliente || ultimo?.movimiento || "Desconocido";
+  const ubicacion = ultimo?.UbicacionLegible || data.dstLegible || data.destino || "Desconocida";
+  const fecha = ultimo?.fchlegible || data.fecha || "";
+  const remitente = data.remitente || "Sin información";
+  const destinatario = data.destinatario || "Sin información";
+  const origen = data.orgLegible || data.origen || "Desconocido";
+  const destino = data.dstLegible || data.destino || "Desconocido";
+
   return {
     content: [
       {
         type: "text",
-        text: `📦 Estado del envío (guía: ${guia})\n\n` +
-              `Remitente: ${data.remitente}\n` +
-              `Destinatario: ${destinatario}\n` +
-              `Origen: ${origen}\nDestino: ${destino}\n\n` +
-              `Estatus: ${estado}\nUbicación actual: ${ubicacion}\nFecha: ${fecha}`
+        text:
+          `📦 Resultado del rastreo (guía: ${guia})\n\n` +
+          `Remitente: ${remitente}\nDestinatario: ${destinatario}\n` +
+          `Origen: ${origen}\nDestino: ${destino}\n\n` +
+          `Estatus: ${estado}\nUbicación actual: ${ubicacion}\nFecha: ${fecha}`
       }
     ],
     structuredContent: {
       guia,
       cliente,
-      remitente: data.remitente,
+      remitente,
       destinatario,
       origen,
       destino,
