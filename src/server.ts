@@ -29,63 +29,66 @@ server.tool("Tufesa_sumar", sumarSchema, async (args, _extra) => {
 
 
 // Dentro de src/server.ts — reemplaza o actualiza la herramienta Tufesa_rastrear
-
+ 
 const rastrearSchema = {
   guia: z.string().describe("Número de guía de envío"),
   cliente: z.string().optional().describe("Nombre del cliente (opcional)")
 };
 
 server.tool("Tufesa_rastrear", rastrearSchema, async (args, _extra) => {
-  const guia = (args as any).guia;
+  const guia = (args as any).guia.trim();
   const cliente = (args as any).cliente || "";
 
-  // Llamada real al endpoint
-  const apiUrl = process.env.TUFESA_API_BASE + "commDatosEnvio";
-  const apiKey = process.env.TUFESA_API_KEY;
+  // Construye la URL del endpoint (GET)
+  const apiBase = process.env.TUFESA_API_BASE || "https://ventas.tufesa.com.mx/wsrestwebjson/";
+  const url = `${apiBase}commDatosEnvio?code=${encodeURIComponent(guia)}&push=-`;
 
-  const body = {
-    code: guia,
-    push: '-'
-    // Si el endpoint requiere nombre de cliente o otros campos, agrégalos aquí
-    // cliente: cliente  
-  };
-
-  const response = await fetch(apiUrl, {
-    method: "POST",
+  const response = await fetch(url, {
+    method: "GET",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": apiKey
     },
-    body: JSON.stringify(body)
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Error al consultar envío: ${response.status} ${text}`);
+    throw new Error(`Error al consultar envío: ${response.status} ${await response.text()}`);
   }
 
   const data = await response.json();
 
-  // Extraemos los campos relevantes
-  const estado = data.historial?.[ data.historial.length - 1 ]?.movimiento || "Desconocido";
-  const ubicacion = data.historial?.[ data.historial.length - 1 ]?.UbicacionLegible || data.destino || "Desconocida";
-  const fecha = data.historial?.[ data.historial.length - 1 ]?.fchlegible || data.fecha;
+  // Extrae los datos más recientes del historial
+  const ultimoMovimiento = data.historial?.[data.historial.length - 1];
+  const estado = ultimoMovimiento?.MensageCliente || ultimoMovimiento?.movimiento || "Desconocido";
+  const ubicacion = ultimoMovimiento?.UbicacionLegible || data.dstLegible || data.destino || "Desconocida";
+  const fecha = ultimoMovimiento?.fchlegible || data.fecha || "";
   const destinatario = data.destinatario || "";
+  const origen = data.orgLegible || data.origen || "";
+  const destino = data.dstLegible || data.destino || "";
 
+  // Construye la respuesta legible para ChatGPT
   return {
     content: [
       {
         type: "text",
-        text: `Guía ${guia}${cliente ? ` (cliente: ${cliente})` : ""}: Última ubicación = ${ubicacion}, Estado = ${estado}, Fecha = ${fecha}`
+        text: `📦 Estado del envío (guía: ${guia})\n\n` +
+              `Remitente: ${data.remitente}\n` +
+              `Destinatario: ${destinatario}\n` +
+              `Origen: ${origen}\nDestino: ${destino}\n\n` +
+              `Estatus: ${estado}\nUbicación actual: ${ubicacion}\nFecha: ${fecha}`
       }
     ],
     structuredContent: {
       guia,
       cliente,
+      remitente: data.remitente,
+      destinatario,
+      origen,
+      destino,
       estado,
       ubicacion,
       fecha,
-      destinatario
+      historial: data.historial,
+      entrega: data.entrega
     }
   };
 });
