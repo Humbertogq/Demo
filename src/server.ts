@@ -40,7 +40,7 @@ server.tool("Tufesa_rastrear", rastrearSchema, async (args, _extra) => {
   const cliente = (args as any).cliente || "";
 
   // Construye la URL del endpoint (GET)
-  const apiBase = process.env.TUFESA_API_BASE || "https://ventas.tufesa.com.mx/wsrestwebjson/";
+  const apiBase = process.env.TUFESA_API_BASE || "https://ventas.tufesa.com.mx/wsrestwebjsonbeta/";
   const url = `${apiBase}commDatosEnvio?code=${encodeURIComponent(guia)}&push=-`;
 
   const response = await fetch(url, {
