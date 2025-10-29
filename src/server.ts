@@ -54,7 +54,10 @@ server.tool("Tufesa_rastrear", rastrearSchema, async (args, _extra) => {
     throw new Error(`Error al consultar envío: ${response.status} ${await response.text()}`);
   }
 
-  const data = await response.json();
+  // const data = await response.json();
+  
+  const json = await response.json();
+  const data = Array.isArray(json) ? json[0] : json;
 
   // Extrae los datos más recientes del historial
   const ultimoMovimiento = data.historial?.[data.historial.length - 1];
