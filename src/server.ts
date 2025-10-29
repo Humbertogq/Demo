@@ -1,6 +1,7 @@
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { z } from "zod";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -10,47 +11,47 @@ const server = new McpServer({
   version: "1.0.0"
 });
 
-// Ejemplo de herramienta
-server.tool("ping", "Responde pong", async () => {
-  return { text: "pong" };
+// Herramienta sin parámetros
+server.tool("ping", "Responde pong", async (_args, _extra) => {
+  return { content: [{ type: "text", text: "pong" }] };
 });
 
-// Mapa de transportes
-const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
+// Herramienta con parámetros (ejemplo: sumar dos números)
+const sumSchema = {
+  a: z.number().describe("Primer número"),
+  b: z.number().describe("Segundo número")
+};
 
-// Ruta que maneja todas las solicitudes MCP (inicialización, mensajes, cierre)
-app.all("/mcp", async (req, res) => {
-  // Verificar o generar sessionId
-  const sessionId = req.headers["mcp-session-id"] as string | undefined;
-  let transport = sessionId ? transports[sessionId] : undefined;
+server.tool("sumar", sumSchema, async (args, _extra) => {
+  const result = (args as any).a + (args as any).b;
+  return {
+    content: [{ type: "text", text: `Resultado: ${result}` }],
+    structuredContent: { result }
+  };
+});
 
-  if (!transport) {
-    // Nueva sesión
+app.post("/mcp", async (req, res) => {
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true
   });
-    transports[transport.sessionId] = transport;
-    await server.connect(transport);
-  }
 
-  try {
-    await transport.handleRequest(req, res, req.body);
-  } catch (err) {
-    console.error("[MCP] Error en /mcp:", err);
-    if (!res.headersSent) {
-      res.status(500).json({ error: "Internal MCP server error" });
-    }
-  }
+  res.on("close", () => {
+    transport.close();
+  });
+
+  await server.connect(transport);
+  await transport.handleRequest(req, res, req.body);
 });
 
-// Healthcheck
-app.get("/health", (_req, res) => res.send("ok"));
+app.get("/health", (_req, res) => {
+  res.status(200).send("ok");
+});
 
 const PORT = Number(process.env.PORT) || 3000;
 app.listen(PORT, () => {
   console.log(`[HTTP] Listening on port ${PORT}`);
-  console.log(`[MCP] Streamable HTTP endpoint available at /mcp`);
+  console.log(`[MCP] Streamable HTTP endpoint: POST /mcp`);
 });
 
 
