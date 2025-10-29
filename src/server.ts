@@ -28,24 +28,64 @@ server.tool("Tufesa_sumar", sumarSchema, async (args, _extra) => {
 });
 
 
+// Dentro de src/server.ts — reemplaza o actualiza la herramienta Tufesa_rastrear
+
 const rastrearSchema = {
   guia: z.string().describe("Número de guía de envío"),
   cliente: z.string().optional().describe("Nombre del cliente (opcional)")
 };
+
 server.tool("Tufesa_rastrear", rastrearSchema, async (args, _extra) => {
   const guia = (args as any).guia;
-  // Aquí pones tu lógica de rastreo: llamar a API interna de TUFESA, obtener estado, etc.
-  // Ejemplo simulado:
-  const estado = "En tránsito";  // Puedes sustituir por llamada real
-  const ubicacion = "Centro de distribución Culiacán, Sinaloa";
+  const cliente = (args as any).cliente || "";
+
+  // Llamada real al endpoint
+  const apiUrl = process.env.TUFESA_API_BASE + "commDatosEnvio";
+  const apiKey = process.env.TUFESA_API_KEY;
+
+  const body = {
+    code: guia,
+    push: '-'
+    // Si el endpoint requiere nombre de cliente o otros campos, agrégalos aquí
+    // cliente: cliente  
+  };
+
+  const response = await fetch(apiUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Error al consultar envío: ${response.status} ${text}`);
+  }
+
+  const data = await response.json();
+
+  // Extraemos los campos relevantes
+  const estado = data.historial?.[ data.historial.length - 1 ]?.movimiento || "Desconocido";
+  const ubicacion = data.historial?.[ data.historial.length - 1 ]?.UbicacionLegible || data.destino || "Desconocida";
+  const fecha = data.historial?.[ data.historial.length - 1 ]?.fchlegible || data.fecha;
+  const destinatario = data.destinatario || "";
+
   return {
-    content:[
-      { type:"text", text:`Guía ${guia}: Estado = ${estado}, Ubicación = ${ubicacion}` }
+    content: [
+      {
+        type: "text",
+        text: `Guía ${guia}${cliente ? ` (cliente: ${cliente})` : ""}: Última ubicación = ${ubicacion}, Estado = ${estado}, Fecha = ${fecha}`
+      }
     ],
     structuredContent: {
       guia,
+      cliente,
       estado,
-      ubicacion
+      ubicacion,
+      fecha,
+      destinatario
     }
   };
 });
