@@ -1,76 +1,56 @@
-// src/server.ts
 import express from "express";
-// import { MCPServer } from "@modelcontextprotocol/sdk/server/mcp.js"; // Nota: clase en mayúsculas
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 const app = express();
-// Importante: necesitas body parsing para los POST /messages
 app.use(express.json({ limit: "1mb" }));
 
 const server = new McpServer({
   name: "mcp-tufesa",
-  version: "1.0.0",
+  version: "1.0.0"
 });
 
-// Herramienta de ejemplo
+// Ejemplo de herramienta
 server.tool("ping", "Responde pong", async () => {
   return { text: "pong" };
 });
 
-// Mapa de transportes por sessionId
-const transports: { [sessionId: string]: SSEServerTransport } = {};
+// Mapa de transportes
+const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 
-// GET /sse → abre canal SSE
-app.get("/sse", async (req, res) => {
-  // Crea transporte con ruta de mensajes
-  const transport = new SSEServerTransport("/messages", res);
-  transports[transport.sessionId] = transport;
+// Ruta que maneja todas las solicitudes MCP (inicialización, mensajes, cierre)
+app.all("/mcp", async (req, res) => {
+  // Verificar o generar sessionId
+  const sessionId = req.headers["mcp-session-id"] as string | undefined;
+  let transport = sessionId ? transports[sessionId] : undefined;
 
-  // Cuando se cierre la conexión SSE, elimina el transporte
-  res.on("close", () => {
-    delete transports[transport.sessionId];
-    // opcional: log
-    console.log(`[MCP] SSE closed session ${transport.sessionId}`);
-  });
-
-  // Conecta tu servidor
-  await server.connect(transport);
-  // No es necesario enviar manualmente “event: endpoint” — el SDK lo hace internamente.
-});
-
-// POST /messages → recibe mensajes MCP del cliente
-app.post("/messages", async (req, res) => {
-  const sessionId = req.query.sessionId as string | undefined;
-  if (!sessionId) {
-    res.status(400).json({ error: "Missing sessionId query param" });
-    return;
-  }
-
-  const transport = transports[sessionId];
   if (!transport) {
-    res.status(404).json({ error: `No transport found for sessionId ${sessionId}` });
-    return;
+    // Nueva sesión
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true
+  });
+    transports[transport.sessionId] = transport;
+    await server.connect(transport);
   }
 
   try {
-    await transport.handlePostMessage(req, res);
+    await transport.handleRequest(req, res, req.body);
   } catch (err) {
-    console.error("[MCP] Error in handlePostMessage:", err);
-    res.status(500).json({ error: "Internal server error" });
+    console.error("[MCP] Error en /mcp:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Internal MCP server error" });
+    }
   }
 });
 
-// Healthcheck opcional
-app.get("/health", (_req, res) => {
-  res.status(200).send("ok");
-});
+// Healthcheck
+app.get("/health", (_req, res) => res.send("ok"));
 
-// Arranque
 const PORT = Number(process.env.PORT) || 3000;
 app.listen(PORT, () => {
   console.log(`[HTTP] Listening on port ${PORT}`);
-  console.log(`[MCP] SSE endpoint: GET /sse, POST /messages?sessionId=<id>`);
+  console.log(`[MCP] Streamable HTTP endpoint available at /mcp`);
 });
 
 
