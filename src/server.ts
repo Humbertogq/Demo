@@ -1,76 +1,77 @@
+// src/server.ts
 import express from "express";
-// import { MCPServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+// import { MCPServer } from "@modelcontextprotocol/sdk/server/mcp.js"; // Nota: clase en mayúsculas
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
-
 const app = express();
+// Importante: necesitas body parsing para los POST /messages
 app.use(express.json({ limit: "1mb" }));
 
-// --- Configura tu servidor MCP ---
-const mcp = new McpServer({
+const server = new McpServer({
   name: "mcp-tufesa",
   version: "1.0.0",
 });
 
-// Ejemplo de herramienta
-mcp.tool("ping", "Responde pong", async () => {
+// Herramienta de ejemplo
+server.tool("ping", "Responde pong", async () => {
   return { text: "pong" };
 });
 
-let transport: SSEServerTransport | null = null;
+// Mapa de transportes por sessionId
+const transports: { [sessionId: string]: SSEServerTransport } = {};
 
-// --- Endpoint SSE para handshake ---
+// GET /sse → abre canal SSE
 app.get("/sse", async (req, res) => {
-  console.log("[MCP] Nueva conexión SSE");
+  // Crea transporte con ruta de mensajes
+  const transport = new SSEServerTransport("/messages", res);
+  transports[transport.sessionId] = transport;
 
-  // Configura encabezados SSE
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
+  // Cuando se cierre la conexión SSE, elimina el transporte
+  res.on("close", () => {
+    delete transports[transport.sessionId];
+    // opcional: log
+    console.log(`[MCP] SSE closed session ${transport.sessionId}`);
   });
 
-  // Crea el transporte SSE
-  transport = new SSEServerTransport("/messages", res);
-
-  // Conecta el servidor MCP con el transporte
-  await mcp.connect(transport);
-
-  // Envía el endpoint /messages
-  res.write(`event: endpoint\ndata: /messages?sessionId=${crypto.randomUUID()}\n\n`);
-
-  // Mantén viva la conexión
-  const keepAlive = setInterval(() => res.write(":\n\n"), 15000);
-  req.on("close", () => {
-    clearInterval(keepAlive);
-    console.log("[MCP] SSE cerrado por el cliente");
-  });
+  // Conecta tu servidor
+  await server.connect(transport);
+  // No es necesario enviar manualmente “event: endpoint” — el SDK lo hace internamente.
 });
 
-// --- Endpoint POST /messages ---
-app.post("/messages", (req, res) => {
+// POST /messages → recibe mensajes MCP del cliente
+app.post("/messages", async (req, res) => {
+  const sessionId = req.query.sessionId as string | undefined;
+  if (!sessionId) {
+    res.status(400).json({ error: "Missing sessionId query param" });
+    return;
+  }
+
+  const transport = transports[sessionId];
   if (!transport) {
-    return res.status(503).json({ error: "SSE no inicializado." });
+    res.status(404).json({ error: `No transport found for sessionId ${sessionId}` });
+    return;
   }
 
   try {
-    transport.handlePostMessage(req, res);
+    await transport.handlePostMessage(req, res);
   } catch (err) {
-    console.error("[MCP] Error en /messages:", err);
-    res.status(500).send("Error interno en /messages");
+    console.error("[MCP] Error in handlePostMessage:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// Healthcheck
-app.get("/health", (_req, res) => res.send("ok"));
-
-// --- Iniciar servidor HTTP ---
-const PORT = Number(process.env.PORT) || 3000;
-app.listen(PORT, () => {
-  console.log(`[HTTP] Escuchando en puerto ${PORT}`);
+// Healthcheck opcional
+app.get("/health", (_req, res) => {
+  res.status(200).send("ok");
 });
 
+// Arranque
+const PORT = Number(process.env.PORT) || 3000;
+app.listen(PORT, () => {
+  console.log(`[HTTP] Listening on port ${PORT}`);
+  console.log(`[MCP] SSE endpoint: GET /sse, POST /messages?sessionId=<id>`);
+});
 
 
 
