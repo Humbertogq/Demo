@@ -12,23 +12,44 @@ const server = new McpServer({
 });
 
 // Herramienta sin parámetros
-server.tool("ping", "Responde pong", async (_args, _extra) => {
-  return { content: [{ type: "text", text: "pong" }] };
+server.tool("Tufesa_ping", "Verifica conexión", async (_args, _extra) => {
+  return { content: [{ type:"text", text:"pong" }] };
 });
 
 // Herramienta con parámetros (ejemplo: sumar dos números)
-const sumSchema = {
+const sumarSchema = {
   a: z.number().describe("Primer número"),
   b: z.number().describe("Segundo número")
 };
 
-server.tool("sumar", sumSchema, async (args, _extra) => {
+server.tool("Tufesa_sumar", sumarSchema, async (args, _extra) => {
   const result = (args as any).a + (args as any).b;
+  return { content:[{ type:"text", text:`Resultado: ${result}` }], structuredContent:{ result } };
+});
+
+
+const rastrearSchema = {
+  guia: z.string().describe("Número de guía de envío"),
+  cliente: z.string().optional().describe("Nombre del cliente (opcional)")
+};
+server.tool("Tufesa_rastrear", rastrearSchema, async (args, _extra) => {
+  const guia = (args as any).guia;
+  // Aquí pones tu lógica de rastreo: llamar a API interna de TUFESA, obtener estado, etc.
+  // Ejemplo simulado:
+  const estado = "En tránsito";  // Puedes sustituir por llamada real
+  const ubicacion = "Centro de distribución Culiacán, Sinaloa";
   return {
-    content: [{ type: "text", text: `Resultado: ${result}` }],
-    structuredContent: { result }
+    content:[
+      { type:"text", text:`Guía ${guia}: Estado = ${estado}, Ubicación = ${ubicacion}` }
+    ],
+    structuredContent: {
+      guia,
+      estado,
+      ubicacion
+    }
   };
 });
+
 
 app.post("/mcp", async (req, res) => {
   const transport = new StreamableHTTPServerTransport({
